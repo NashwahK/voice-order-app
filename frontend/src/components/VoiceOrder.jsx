@@ -3,7 +3,7 @@ import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 
 const API_URL = import.meta.env.PROD
-  ? 'https://voice-order-app.vercel.app/api'
+  ? 'https://voice-order-app-umber.vercel.app/api'
   : '/api';
 
 function VoiceOrder({ onOrderComplete }) {
