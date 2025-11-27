@@ -1,0 +1,4 @@
+# At /frontend/.gitignore
+../backend/.env
+node_modules
+dist
