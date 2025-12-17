@@ -13,6 +13,26 @@ function App() {
   const handleOrderComplete = (data) => {
     setOrderData(data);
     setShowModal(true);
+
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+    fetch(`${backendUrl}/api/orders`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        items: data.items,
+        total: data.total,
+        owner: 'Voice Order User'
+      }),
+    })
+      .then(response => response.json())
+      .then(result => {
+        console.log('Order saved:', result);
+      })
+      .catch(error => {
+        console.error('Failed to save order:', error);
+      });
   };
 
   const handleCloseModal = () => {
