@@ -1,39 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { GoogleGenAI, Modality } from '@google/genai';
 
-const SYSTEM_PROMPT = `You are a friendly Korean restaurant order assistant. Help customers order.
-
-=== CRITICAL OUTPUT RULES ===
-- Output ONLY natural spoken conversation. NOTHING ELSE.
-- NEVER output thinking, reasoning, or planning sentences.
-- NEVER say things like: "I'm focusing on", "My current", "I've processed", "I realized", "I'm now", "Let me check", "I need to", etc.
-- NEVER describe your process, thoughts, or focus.
-- NEVER mention checking databases, systems, or searching.
-- Just speak naturally like a real restaurant worker.
-
-=== MENU (ONLY these items) ===
-- Bibimbap ($12.99)
-- Bulgogi ($15.99)
-- Kimchi Jjigae ($11.99)
-- Japchae ($10.99)
-- Tteokbokki ($9.99)
-- Korean Fried Chicken ($13.99)
-- Samgyeopsal ($16.99)
-- Seafood Pancake ($11.99)
-- Soju ($8.99)
-- Makgeolli ($7.99)
-
-=== FLOW ===
-1. Greet: "Hi! Welcome. What can I get for you?"
-2. When they order: Confirm item + quantity
-3. Off-menu request: "Sorry, we don't have that. What from our menu?"
-4. Done? Say: "Order confirmed!" then output:
-ORDER_COMPLETE
-{"items": [{"name": "Item", "price": XX.XX, "quantity": N}], "total": XX.XX}
-
-Only output conversational speech. No thinking. No planning. No reasoning.
-
-Never show thinking. Never mention databases or processes. Only natural conversation.`;
+const BACKEND_WS_URL = import.meta.env.VITE_BACKEND_WS_URL || 'ws://localhost:3001';
 
 function VoiceOrder({ onOrderComplete }) {
   const [messages, setMessages] = useState([]);
@@ -41,8 +8,7 @@ function VoiceOrder({ onOrderComplete }) {
   const [isListening, setIsListening] = useState(false);
   const [status, setStatus] = useState('Initializing...');
 
-  const clientRef = useRef(null);
-  const sessionRef = useRef(null);
+  const wsRef = useRef(null);
   const inputAudioContextRef = useRef(null);
   const outputAudioContextRef = useRef(null);
   const inputNodeRef = useRef(null);
@@ -52,11 +18,10 @@ function VoiceOrder({ onOrderComplete }) {
   const sourceNodeRef = useRef(null);
   const audioSourcesRef = useRef(new Set());
   const nextStartTimeRef = useRef(0);
-  const initializedRef = useRef(false);
 
-  // Initialize Gemini Live API client
+  // Initialize WebSocket connection to backend
   useEffect(() => {
-    const initClient = async () => {
+    const initConnection = async () => {
       try {
         // Initialize Audio Contexts
         inputAudioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
@@ -70,135 +35,127 @@ function VoiceOrder({ onOrderComplete }) {
         outputNodeRef.current = outputAudioContextRef.current.createGain();
         outputNodeRef.current.connect(outputAudioContextRef.current.destination);
 
-        // Get ephemeral token from backend
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-        const tokenResponse = await fetch(`${backendUrl}/api/get-token`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        });
+        // Connect to backend WebSocket
+        const ws = new WebSocket(BACKEND_WS_URL);
+        wsRef.current = ws;
 
-        if (!tokenResponse.ok) {
-          throw new Error('Failed to get authentication token from backend');
-        }
+        ws.onopen = () => {
+          console.log('Connected to backend WebSocket');
+          setConnectionStatus('connecting');
+          setStatus('Connecting to voice service...');
+        };
 
-        const { token } = await tokenResponse.json();
-
-        // Initialize Gemini client with ephemeral token
-        const client = new GoogleGenAI({ apiKey: token });
-        clientRef.current = client;
-
-        // Connect to Live API
-        const session = await client.live.connect({
-          model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-          config: {
-            // Request audio responses only
-            responseModalities: [Modality.AUDIO],
-            systemInstruction: SYSTEM_PROMPT,
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: 'Puck' }
-              }
-            }
-          },
-          callbacks: {
-            onopen: () => {
-              console.log('Connected to Gemini Live API');
-              setConnectionStatus('connected');
-              setStatus('Connected. Click Start to begin.');
-            },
-            onmessage: (message) => {
-              console.log('Live API message received:', message);
-              if (message.serverContent?.modelTurn?.parts) {
-                for (const part of message.serverContent.modelTurn.parts) {
-                  // Handle text responses
-                  if (part.text) {
-                    const text = part.text;
-                    
-                    // Check for order completion FIRST
-                    if (text.includes('ORDER_COMPLETE')) {
-                      console.log('Order complete marker found!');
-                      const cleanedText = text.replace(/```json\s*/g, '').replace(/```/g, '');
-                      const jsonMatch = cleanedText.match(/\{[\s\S]*?\}/);
-                      if (jsonMatch) {
-                        try {
-                          const orderData = JSON.parse(jsonMatch[0]);
-                          console.log('Order data parsed:', orderData);
-                          onOrderComplete(orderData);
-                        } catch (e) {
-                          console.error('Error parsing order JSON:', e);
-                        }
-                      }
-                    }
-
-                    // Remove ALL thinking/reasoning patterns
-                    let cleanText = text
-                      .replace(/\*\*[^*]+\*\*[^\n]*/g, '') // **Title** format
-                      .replace(/ORDER_COMPLETE/gi, '')
-                      .replace(/```json\s*/g, '')
-                      .replace(/```/g, '')
-                      .replace(/^\s*\{[\s\S]*?\}\s*$/gm, '')
-                      .split('\n')
-                      .filter(line => {
-                        const trimmed = line.trim();
-                        // Remove thinking/reasoning sentences
-                        if (trimmed.match(/^(I'm|I've|I'am|I\'ve|I am|My |I need|Let me|I'll |I should|I'm focusing|I'm starting|I'm now|I realized|I have|The user|I processed|I received|I've got|I got|I'm getting|I'm putting|I'm planning|I'm moving|I'm checking)/i)) {
-                          return false;
-                        }
-                        return trimmed.length > 0;
-                      })
-                      .join('\n')
-                      .trim();
-
-                    if (cleanText) {
-                      setMessages((prev) => [...prev, { type: 'assistant', text: cleanText }]);
-                    }
-                  }
-
-                  // Handle audio responses
-                  if (part.inlineData?.data) {
-                    playAudio(part.inlineData.data);
-                  }
-                }
-              }
-
-              if (message.serverContent?.interrupted) {
-                // Stop current audio playback
-                audioSourcesRef.current.forEach((source) => {
-                  source.stop();
-                  audioSourcesRef.current.delete(source);
-                });
-                nextStartTimeRef.current = 0;
-              }
-            },
-            onerror: (e) => {
-              console.error('Live API error:', e);
-              setConnectionStatus('error');
-              setStatus(`Error: ${e.message}`);
-            },
-            onclose: (e) => {
-              console.log('Live API closed:', e.reason);
-              setConnectionStatus('disconnected');
-              setStatus('Disconnected');
-            }
+        ws.onmessage = (event) => {
+          const message = JSON.parse(event.data);
+          
+          if (message.type === 'connected') {
+            console.log('Backend connected to Gemini');
+            setConnectionStatus('connected');
+            setStatus('Connected. Click Start to begin.');
+          } else if (message.type === 'gemini_message') {
+            handleGeminiMessage(message.data);
+          } else if (message.type === 'error') {
+            console.error('Backend error:', message.message);
+            setConnectionStatus('error');
+            setStatus(`Error: ${message.message}`);
+          } else if (message.type === 'disconnected') {
+            setConnectionStatus('disconnected');
+            setStatus('Disconnected');
           }
-        });
+        };
 
-        sessionRef.current = session;
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          setConnectionStatus('error');
+          setStatus('Connection error');
+        };
+
+        ws.onclose = () => {
+          console.log('WebSocket closed');
+          setConnectionStatus('disconnected');
+          setStatus('Disconnected');
+        };
+
       } catch (error) {
-        console.error('Failed to initialize Live API:', error);
+        console.error('Failed to initialize:', error);
         setConnectionStatus('error');
         setStatus(`Error: ${error.message}`);
       }
     };
 
-    initClient();
+    initConnection();
 
     return () => {
-      if (sessionRef.current) {
-        sessionRef.current.close();
+      if (wsRef.current) {
+        wsRef.current.close();
       }
     };
   }, [onOrderComplete]);
+
+  const handleGeminiMessage = (message) => {
+    console.log('Gemini message received:', message);
+    if (message.serverContent?.modelTurn?.parts) {
+      for (const part of message.serverContent.modelTurn.parts) {
+        // Handle text responses
+        if (part.text) {
+          const text = part.text;
+          
+          // Check for order completion FIRST
+          if (text.includes('ORDER_COMPLETE')) {
+            console.log('Order complete marker found!');
+            const cleanedText = text.replace(/```json\s*/g, '').replace(/```/g, '');
+            const jsonMatch = cleanedText.match(/\{[\s\S]*?\}/);
+            if (jsonMatch) {
+              try {
+                const orderData = JSON.parse(jsonMatch[0]);
+                console.log('Order data parsed:', orderData);
+                onOrderComplete(orderData);
+              } catch (e) {
+                console.error('Error parsing order JSON:', e);
+              }
+            }
+          }
+
+          // Remove ALL thinking/reasoning patterns
+          let cleanText = text
+            .replace(/\*\*[^*]+\*\*[^\n]*/g, '') // **Title** format
+            .replace(/ORDER_COMPLETE/gi, '')
+            .replace(/```json\s*/g, '')
+            .replace(/```/g, '')
+            .replace(/^\s*\{[\s\S]*?\}\s*$/gm, '')
+            .split('\n')
+            .filter(line => {
+              const trimmed = line.trim();
+              // Remove thinking/reasoning sentences
+              if (trimmed.match(/^(I'm|I've|I'am|I\'ve|I am|My |I need|Let me|I'll |I should|I'm focusing|I'm starting|I'm now|I realized|I have|The user|I processed|I received|I've got|I got|I'm getting|I'm putting|I'm planning|I'm moving|I'm checking)/i)) {
+                return false;
+              }
+              return trimmed.length > 0;
+            })
+            .join('\n')
+            .trim();
+
+          if (cleanText) {
+            setMessages((prev) => [...prev, { type: 'assistant', text: cleanText }]);
+          }
+        }
+
+        // Handle audio responses
+        if (part.inlineData?.data) {
+          playAudio(part.inlineData.data);
+        }
+      }
+    }
+
+    if (message.serverContent?.interrupted) {
+      // Stop current audio playback
+      audioSourcesRef.current.forEach((source) => {
+        source.stop();
+        audioSourcesRef.current.delete(source);
+      });
+      nextStartTimeRef.current = 0;
+    }
+  };
 
   const playAudio = async (base64Audio) => {
     try {
@@ -294,15 +251,13 @@ function VoiceOrder({ onOrderComplete }) {
         }
         const base64Audio = btoa(binary);
 
-        if (sessionRef.current) {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           try {
-            sessionRef.current.sendRealtimeInput({
-              media: {
-                mimeType: "audio/pcm",
-                data: base64Audio
-              }
-            });
-            console.log('Audio sent to Gemini');
+            wsRef.current.send(JSON.stringify({
+              type: 'audio',
+              data: base64Audio
+            }));
+            console.log('Audio sent to backend');
           } catch (error) {
             console.error('Error sending audio:', error);
           }
@@ -353,7 +308,6 @@ function VoiceOrder({ onOrderComplete }) {
     }
     setMessages([]);
     setStatus('Session reset. Reconnecting...');
-    // Reinitialize (this will happen on next render due to useEffect)
   };
 
   return (
