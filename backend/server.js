@@ -94,7 +94,8 @@ app.post('/api/orders', async (req, res) => {
       return res.status(400).json({ error: 'Invalid order: valid total required' });
     }
 
-    const result = await sql`
+    const db = sql(); // Call the function to get database connection
+    const result = await db`
       INSERT INTO orders (order_details, order_total, order_owner)
       VALUES (${JSON.stringify(items)}, ${total}, ${owner || 'Anonymous'})
       RETURNING order_id, order_details, order_total, order_owner
