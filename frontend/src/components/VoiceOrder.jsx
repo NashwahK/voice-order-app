@@ -162,14 +162,22 @@ function VoiceOrder({ onOrderComplete }) {
                     // Parse order items from text - but ONLY if actively confirming an order
                     const lowerText = text.toLowerCase();
                     
-                    // Skip parsing if AI is just listing menu or asking questions
+                    // Skip parsing if AI is just listing menu or asking initial questions
                     const isJustListing = lowerText.match(/menu|available|we have|choices|options are|items are/i);
-                    const isAsking = lowerText.match(/what (would|can)|anything else|which|help you|for you/i);
+                    const isAskingInitial = lowerText.match(/what (would|can)|which one|help you decide|which (item|dish)/i);
                     
                     // Only parse items if AI is confirming an order
                     const isConfirming = lowerText.match(/got it|sure|added|okay|alright|perfect/i);
                     
-                    if (isConfirming && !isJustListing && !isAsking) {
+                    console.log('🔍 Parse check:', { 
+                      text: text.substring(0, 50) + '...',
+                      isJustListing: !!isJustListing, 
+                      isAskingInitial: !!isAskingInitial, 
+                      isConfirming: !!isConfirming,
+                      willParse: isConfirming && !isJustListing && !isAskingInitial
+                    });
+                    
+                    if (isConfirming && !isJustListing && !isAskingInitial) {
                       for (const [key, item] of Object.entries(MENU_ITEMS)) {
                         if (lowerText.includes(key)) {
                           // Check for removal keywords
