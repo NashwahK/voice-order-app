@@ -6,28 +6,38 @@ const SYSTEM_PROMPT = `You are a Korean restaurant order taker. Respond ONLY wit
 MENU ITEMS:
 Bibimbap $12.99 | Bulgogi $15.99 | Kimchi Jjigae $11.99 | Japchae $10.99 | Tteokbokki $9.99 | Korean Fried Chicken $13.99 | Samgyeopsal $16.99 | Seafood Pancake $11.99 | Soju $8.99 | Makgeolli $7.99
 
-RESPONSE EXAMPLES:
+RESPONSE PATTERNS:
+Adding items - use confirmation words:
 Customer: "I'll have bulgogi"
 You: "Got it, bulgogi. Anything else?"
 
 Customer: "Add kimchi jjigae"
 You: "Sure, kimchi jjigae added. What else?"
 
+Removing items - say "[item] removed":
+Customer: "Remove the bulgogi"
+You: "Bulgogi removed. Anything else?"
+
+Customer: "Cancel the kimchi jjigae"
+You: "Kimchi jjigae removed. What else?"
+
+Menu questions - list items WITHOUT confirmation words:
+Customer: "What's on the menu?"
+You: "We have bibimbap, bulgogi, kimchi jjigae, and more."
+
+Finishing:
 Customer: "That's all"
 You: "Perfect! Your order is ready."
 
 CRITICAL RULES:
 - Output ONLY the spoken response (10 words max)
+- When ADDING items → use "got it", "sure", "okay", "added"
+- When REMOVING items → ALWAYS say "[item name] removed"
+- When LISTING menu → DON'T use confirmation words
 - NO thinking, NO explanations, NO bold text, NO meta-commentary
-- When customer says done/that's all → respond with EXACTLY: "Perfect! Your order is ready."
-- Do NOT describe what you're doing or planning
-- Speak naturally like a real order taker
+- When customer says done/that's all → respond EXACTLY: "Perfect! Your order is ready."
 - Stay professional regardless of customer tone
 - Never acknowledge or repeat rude language
-- Redirect to ordering process
-
-HANDLING DIFFICULT CUSTOMERS:
-- If customer is rude/harsh: Stay calm and professional
 - Example: "I understand. Let me help you with your order."
 - NEVER match their tone or argue
 - If abuse continues: "I'm here to help with your food order. What can I get you?"
@@ -149,37 +159,59 @@ function VoiceOrder({ onOrderComplete }) {
                     console.log('Full text content:', text);
                     console.log('Text length:', text.length);
                     
-                    // Parse order items from text
+                    // Parse order items from text - but ONLY if actively confirming an order
                     const lowerText = text.toLowerCase();
-                    for (const [key, item] of Object.entries(MENU_ITEMS)) {
-                      if (lowerText.includes(key)) {
-                        // Extract quantity if mentioned
-                        const quantityMatch = text.match(new RegExp(`(\\d+)\\s*${key}`, 'i')) || 
-                                            text.match(new RegExp(`${key}.*?(\\d+)`, 'i'));
-                        const quantity = quantityMatch ? parseInt(quantityMatch[1]) : 1;
-                        
-                        // Add or update item in order
-                        setCurrentOrder(prev => {
-                          const existingIndex = prev.items.findIndex(i => i.name === item.name);
-                          let newItems;
+                    
+                    // Skip parsing if AI is just listing menu or asking questions
+                    const isJustListing = lowerText.match(/menu|available|we have|choices|options are|items are/i);
+                    const isAsking = lowerText.match(/what (would|can)|anything else|which|help you|for you/i);
+                    
+                    // Only parse items if AI is confirming an order
+                    const isConfirming = lowerText.match(/got it|sure|added|okay|alright|perfect/i);
+                    
+                    if (isConfirming && !isJustListing && !isAsking) {
+                      for (const [key, item] of Object.entries(MENU_ITEMS)) {
+                        if (lowerText.includes(key)) {
+                          // Check for removal keywords
+                          const isRemoving = lowerText.match(/remov(e|ed|ing)|delet(e|ed|ing)|cancel|take (off|out)|no (more|longer)|without/i);
                           
-                          if (existingIndex >= 0) {
-                            newItems = [...prev.items];
-                            newItems[existingIndex].quantity += quantity;
+                          if (isRemoving) {
+                            // Remove item from order
+                            setCurrentOrder(prev => {
+                              const newItems = prev.items.filter(i => i.name !== item.name);
+                              const total = newItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+                              const newOrder = { items: newItems, total };
+                              console.log('Item removed, order updated:', newOrder);
+                              currentOrderRef.current = newOrder;
+                              return newOrder;
+                            });
                           } else {
-                            newItems = [...prev.items, { ...item, quantity }];
+                            // Extract quantity if mentioned
+                            const quantityMatch = text.match(new RegExp(`(\\d+)\\s*${key}`, 'i')) || 
+                                                text.match(new RegExp(`${key}.*?(\\d+)`, 'i'));
+                            const quantity = quantityMatch ? parseInt(quantityMatch[1]) : 1;
+                            
+                            // Add or update item in order
+                            setCurrentOrder(prev => {
+                              const existingIndex = prev.items.findIndex(i => i.name === item.name);
+                              let newItems;
+                              
+                              if (existingIndex >= 0) {
+                                newItems = [...prev.items];
+                                newItems[existingIndex].quantity += quantity;
+                              } else {
+                                newItems = [...prev.items, { ...item, quantity }];
+                              }
+                              
+                              const total = newItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+                              const newOrder = { items: newItems, total };
+                              console.log('Order updated:', newOrder);
+                              currentOrderRef.current = newOrder;
+                              return newOrder;
+                            });
                           }
-                          
-                          const total = newItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
-                          const newOrder = { items: newItems, total };
-                          console.log('Order updated:', newOrder);
-                          
-                          // Update ref so we always have latest value
-                          currentOrderRef.current = newOrder;
-                          
-                          return newOrder;
-                        });
-                        break;
+                          break;
+                        }
                       }
                     }
                     
