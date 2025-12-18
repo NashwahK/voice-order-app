@@ -74,6 +74,7 @@ function VoiceOrder({ onOrderComplete }) {
   const nextStartTimeRef = useRef(0);
   const initializedRef = useRef(false);
   const systemPromptSentRef = useRef(false);
+  const isConnectedRef = useRef(false);
 
   useEffect(() => {
     const initClient = async () => {
@@ -126,6 +127,7 @@ function VoiceOrder({ onOrderComplete }) {
           callbacks: {
             onopen: () => {
               console.log('Connected to Gemini Live API');
+              isConnectedRef.current = true;
               setConnectionStatus('connected');
               setStatus('Connected. Click Start to begin.');
             },
@@ -382,6 +384,7 @@ function VoiceOrder({ onOrderComplete }) {
             },
             onclose: (e) => {
               console.log('Live API closed:', e.reason);
+              isConnectedRef.current = false;
               audioSourcesRef.current.forEach((source) => {
                 try { source.stop(); } catch (err) { /* already stopped */ }
               });
@@ -512,7 +515,7 @@ function VoiceOrder({ onOrderComplete }) {
         }
         const base64Audio = btoa(binary);
 
-        if (sessionRef.current) {
+        if (sessionRef.current && isConnectedRef.current) {
           try {
             sessionRef.current.sendRealtimeInput({
               media: {
@@ -521,7 +524,10 @@ function VoiceOrder({ onOrderComplete }) {
               }
             });
           } catch (error) {
-            console.error('Error sending audio:', error);
+            // Silently ignore if WebSocket is closing/closed
+            if (!error.message?.includes('CLOSING') && !error.message?.includes('CLOSED')) {
+              console.error('Error sending audio:', error);
+            }
           }
         }
       };
@@ -568,16 +574,26 @@ function VoiceOrder({ onOrderComplete }) {
       stopRecording();
     }
     
-    if (sessionRef.current) {
-      sessionRef.current.close();
-      sessionRef.current = null;
-    }
+    // Mark as disconnected immediately
+    isConnectedRef.current = false;
     
+    // Clean up audio sources first
     audioSourcesRef.current.forEach((source) => {
       try { source.stop(); } catch (err) { /* already stopped */ }
     });
     audioSourcesRef.current.clear();
     nextStartTimeRef.current = 0;
+    
+    // Close the session (this will trigger the onclose handler)
+    if (sessionRef.current) {
+      try {
+        sessionRef.current.close();
+      } catch (err) {
+        console.warn('Error closing session:', err);
+      }
+      sessionRef.current = null;
+    }
+    
     setMessages([]);
     
     // Reset order state when resetting session
