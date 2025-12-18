@@ -606,7 +606,7 @@ function VoiceOrder({ onOrderComplete }) {
       {/* Footer Hint */}
       <div className="bg-black/30 backdrop-blur-md border-t border-red-800/30 p-3 sm:p-4 text-center">
         <p className="text-xs sm:text-sm text-red-200">
-          {isListening ? '🎤 Listening... Speak your order naturally' : 'Tap "Start Ordering" and say what you want'}
+          {isListening ? 'Listening... Speak your order naturally' : 'Tap "Start Ordering" and say what you want'}
         </p>
       </div>
     </div>

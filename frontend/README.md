@@ -1,16 +1,72 @@
-# React + Vite
+# Voice Order App - Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Order your favorite Korean dishes with your voice! This frontend uses React + Vite with Gemini's Live API for real-time voice interactions.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- 🎤 Real-time voice ordering with Gemini Live API
+- 🌊 Animated waveform visualization during conversation
+- 🍜 10 authentic Korean dishes with descriptions
+- 🧾 Receipt-style order confirmation
+- 📱 Fully responsive design with TailwindCSS
+- 🔒 Secure ephemeral token authentication
 
-## React Compiler
+## Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- React 19.2.0
+- Vite 7.2.4
+- TailwindCSS 4.1.17
+- @google/genai 1.34.0
+- Axios for HTTP requests
 
-## Expanding the ESLint configuration
+## Getting Started
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+See [DEPLOYMENT.md](../DEPLOYMENT.md) in the root directory for complete setup instructions.
+
+### Quick Start
+
+```bash
+npm install
+cp .env.example .env
+# Edit .env with your backend URL
+npm run dev
+```
+
+## Scripts
+
+- `npm run dev` - Start development server (port 5173)
+- `npm run build` - Build for production
+- `npm run preview` - Preview production build
+- `npm run lint` - Run ESLint
+
+## Project Structure
+
+```
+src/
+├── components/
+│   ├── LandingPage.jsx    # Menu display
+│   ├── VoiceOrder.jsx      # Voice interaction
+│   └── OrderModal.jsx      # Order confirmation
+├── App.jsx                 # Main app & routing
+├── main.jsx                # React entry point
+└── index.css               # Global styles
+```
+
+## Environment Variables
+
+Create `.env` from `.env.example`:
+
+```
+VITE_BACKEND_URL=http://localhost:3001
+```
+
+For production, set this to your deployed backend URL.
+
+## Browser Compatibility
+
+Requires browsers with:
+- Web Audio API support
+- MediaRecorder API support
+- ES2020+ features
+
+Tested on: Chrome 90+, Edge 90+, Safari 14+

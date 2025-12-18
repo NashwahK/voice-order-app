@@ -1,0 +1,12 @@
+# Vercel ignore file for backend deployment
+# Excludes unnecessary files to speed up deployment
+
+node_modules
+.env
+.env.*
+.git
+.gitignore
+README.md
+*.log
+*.md
+.DS_Store
