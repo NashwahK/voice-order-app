@@ -177,11 +177,15 @@ function VoiceOrder({ onOrderComplete }) {
                       willParse: isConfirming && !isJustListing && !isAskingInitial
                     });
                     
-                    if (isConfirming && !isJustListing && !isAskingInitial) {
+                    // Check for removal FIRST (before item matching)
+                    const isRemoving = lowerText.match(/\b(remov(e|ed|ing)|delet(e|ed|ing)|cancel(led|ing)?|take.*(off|out).*order|no (more|longer)|without)\b/i) &&
+                                      !lowerText.match(/\b(take|taking) (your|the) order\b/i);
+                    
+                    if ((isConfirming || isRemoving) && !isJustListing && !isAskingInitial) {
                       for (const [key, item] of Object.entries(MENU_ITEMS)) {
-                        if (lowerText.includes(key)) {
-                          // Check for removal keywords
-                          const isRemoving = lowerText.match(/remov(e|ed|ing)|delet(e|ed|ing)|cancel|take (off|out)|no (more|longer)|without/i);
+                        // Match with or without plural 's'
+                        const keyPattern = new RegExp(`\\b${key}s?\\b`, 'i');
+                        if (keyPattern.test(lowerText)) {
                           
                           if (isRemoving) {
                             // Remove item from order
@@ -192,12 +196,34 @@ function VoiceOrder({ onOrderComplete }) {
                               console.log('Item removed, order updated:', newOrder);
                               currentOrderRef.current = newOrder;
                               return newOrder;
-                            });
+                            });                          // Don't break - might be removing multiple items                          } else {
+                          // Extract quantity if mentioned (digits or words)
+                          const numberWords = {
+                            'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+                            'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+                          };
+                          
+                          let quantity = 1;
+                          
+                          // Try digit match ONLY before item name (e.g., "2 soju", "got 3 bulgogi")
+                          // This avoids matching prices like "soju $8.99"
+                          const digitPattern = new RegExp(`\\b(\\d+)\\s+${key}s?\\b`, 'i');
+                          const digitMatch = text.match(digitPattern);
+                          
+                          if (digitMatch) {
+                            const parsed = parseInt(digitMatch[1]);
+                            // Sanity check: reasonable quantities only (1-99)
+                            if (parsed > 0 && parsed < 100) {
+                              quantity = parsed;
+                            }
                           } else {
-                            // Extract quantity if mentioned
-                            const quantityMatch = text.match(new RegExp(`(\\d+)\\s*${key}`, 'i')) || 
-                                                text.match(new RegExp(`${key}.*?(\\d+)`, 'i'));
-                            const quantity = quantityMatch ? parseInt(quantityMatch[1]) : 1;
+                            // Try word number match (e.g., "two soju")
+                            const wordPattern = Object.keys(numberWords).join('|');
+                            const wordMatch = text.match(new RegExp(`\\b(${wordPattern})\\s+${key}s?\\b`, 'i'));
+                            if (wordMatch) {
+                              quantity = numberWords[wordMatch[1].toLowerCase()] || 1;
+                            }
+                          }
                             
                             // Add or update item in order
                             setCurrentOrder(prev => {
@@ -218,13 +244,26 @@ function VoiceOrder({ onOrderComplete }) {
                               return newOrder;
                             });
                           }
-                          break;
+                          // Continue to next item (allows "bulgogi and soju" to work)
                         }
                       }
                     }
                     
-                    // Check for order completion phrase (before filtering!)
-                    if (text.toLowerCase().includes('your order is ready')) {
+                    // Check for order completion phrase - be lenient with variations
+                    const completionPhrases = [
+                      'order is ready',
+                      'order ready', 
+                      'all set',
+                      "that's it",
+                      'done with your order',
+                      'seady' // Speech recognition sometimes mishears "ready"
+                    ];
+                    
+                    const hasCompletionPhrase = completionPhrases.some(phrase => 
+                      text.toLowerCase().includes(phrase)
+                    );
+                    
+                    if (hasCompletionPhrase) {
                       console.log('Order ready phrase detected! Auto-completing...');
                       console.log('Current order from state:', currentOrder);
                       console.log('Current order from ref:', currentOrderRef.current);
@@ -328,6 +367,11 @@ function VoiceOrder({ onOrderComplete }) {
             },
             onclose: (e) => {
               console.log('Live API closed:', e.reason);
+              audioSourcesRef.current.forEach((source) => {
+                try { source.stop(); } catch (err) { /* already stopped */ }
+              });
+              audioSourcesRef.current.clear();
+              nextStartTimeRef.current = 0;
               setConnectionStatus('disconnected');
               setStatus('Disconnected');
             }
@@ -383,6 +427,10 @@ function VoiceOrder({ onOrderComplete }) {
       source.buffer = audioBuffer;
       source.connect(outputNodeRef.current);
       source.addEventListener('ended', () => {
+        audioSourcesRef.current.delete(source);
+      });
+      source.addEventListener('error', (err) => {
+        console.error('Audio source error:', err);
         audioSourcesRef.current.delete(source);
       });
 
@@ -500,10 +548,21 @@ function VoiceOrder({ onOrderComplete }) {
   };
 
   const resetSession = () => {
+    // Stop recording first to clean up microphone access
+    if (isListening) {
+      stopRecording();
+    }
+    
     if (sessionRef.current) {
       sessionRef.current.close();
       sessionRef.current = null;
     }
+    
+    audioSourcesRef.current.forEach((source) => {
+      try { source.stop(); } catch (err) { /* already stopped */ }
+    });
+    audioSourcesRef.current.clear();
+    nextStartTimeRef.current = 0;
     setMessages([]);
     setStatus('Session reset. Reconnecting...');
   };
@@ -643,6 +702,7 @@ function VoiceOrder({ onOrderComplete }) {
                   }}
                   className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-4 sm:py-5 px-6 sm:px-8 rounded-xl sm:rounded-2xl shadow-lg transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 text-base sm:text-lg"
                   disabled={currentOrder.items.length === 0}
+                  title={currentOrder.items.length === 0 ? 'Add items to your order first' : `Complete order with ${currentOrder.items.length} item(s)`}
                 >
                   Complete {currentOrder.items.length > 0 && `(${currentOrder.items.length})`}
                 </button>
