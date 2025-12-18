@@ -12,8 +12,9 @@ const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 
 if (missingEnvVars.length > 0) {
   console.error('❌ Missing required environment variables:', missingEnvVars.join(', '));
-  console.error('Please check your .env file. See .env.example for reference.');
-  process.exit(1);
+  console.error('Please check your environment configuration in Vercel dashboard.');
+  // Don't use process.exit() in serverless - it crashes the function
+  // The endpoints will handle missing env vars gracefully
 }
 
 const app = express();
@@ -109,6 +110,13 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// For Vercel serverless functions, export the app instead of listening
+// For local development, start the server if not in production
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+// Export for Vercel
+export default app;
