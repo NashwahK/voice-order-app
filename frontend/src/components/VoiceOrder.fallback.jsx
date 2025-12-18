@@ -145,12 +145,12 @@ function VoiceOrder({ onOrderComplete }) {
                     // Parse order items when bot uses confirmation language
                     const lowerText = text.toLowerCase();
                     
-                    // Check if bot is removing items (check this FIRST - it takes precedence)
-                    const hasRemoval = lowerText.match(/\b(remov(ed?|ing)|delet(ed?|ing)|cancel(led?|ing))\b/i);
-                    
                     // Check if bot is confirming an order (vs just listing menu)
-                    // Only check this if NOT removing
-                    const hasConfirmation = !hasRemoval && lowerText.match(/\b(got it|sure|okay|alright|perfect|adding|add|confirmed?)\b/i);
+                    // Look for phrases like "got it", "adding", "confirmed", etc.
+                    const hasConfirmation = lowerText.match(/\b(got it|sure|okay|alright|perfect|adding|add|confirmed?|i've)\b/i);
+                    
+                    // Check if bot is removing items
+                    const hasRemoval = lowerText.match(/\b(remov(ed?|ing)|delet(ed?|ing)|cancel(led?|ing))\b/i);
                     
                     // Avoid parsing when just listing menu
                     const isJustListing = lowerText.match(/\b(menu|available|we have|choices|options)\b/i);
