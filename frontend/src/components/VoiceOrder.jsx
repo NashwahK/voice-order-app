@@ -138,26 +138,20 @@ function VoiceOrder({ onOrderComplete }) {
                 for (const part of message.serverContent.modelTurn.parts) {
                   console.log('Part type:', { hasText: !!part.text, hasAudio: !!part.inlineData });
                   
-                  // Handle text responses
                   if (part.text) {
                     const text = part.text;
                     console.log('Full text content:', text);
                     console.log('Text length:', text.length);
                     
-                    // Parse order items when bot uses confirmation language
                     const lowerText = text.toLowerCase();
                     
-                    // Check if bot is removing items (check this FIRST - it takes precedence)
                     const hasRemoval = lowerText.match(/\b(remov(ed?|ing)|delet(ed?|ing)|cancel(led?|ing))\b/i);
                     
-                    // Check if bot is confirming an order (vs just listing menu)
-                    // Only check this if NOT removing
                     const hasConfirmation = !hasRemoval && lowerText.match(/\b(got it|sure|okay|alright|perfect|adding|add|confirmed?)\b/i);
                     
-                    // Avoid parsing when just listing menu
                     const isJustListing = lowerText.match(/\b(menu|available|we have|choices|options)\b/i);
                     
-                    console.log('🔍 Parse check:', { 
+                    console.log('Parse check:', { 
                       text: text.substring(0, 100) + '...',
                       hasConfirmation: !!hasConfirmation,
                       hasRemoval: !!hasRemoval,
@@ -166,14 +160,11 @@ function VoiceOrder({ onOrderComplete }) {
                     });
                     
                     if ((hasConfirmation || hasRemoval) && !isJustListing) {
-                      console.log('✅ PARSING ENABLED');
+                      console.log('PARSING ENABLED');
                       for (const [key, item] of Object.entries(MENU_ITEMS)) {
-                        // Match with or without plural 's'
                         const keyPattern = new RegExp(`\\b${key}s?\\b`, 'i');
                         if (keyPattern.test(lowerText)) {
-                          console.log('🎯 Found:', key);
-                          
-                          // Extract quantity if mentioned (digits or words)
+                          console.log('Found:', key);
                           const numberWords = {
                             'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
                             'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
@@ -191,7 +182,6 @@ function VoiceOrder({ onOrderComplete }) {
                               quantity = parsed;
                             }
                           } else {
-                            // Try word number match (e.g., "two soju")
                             const wordPattern = Object.keys(numberWords).join('|');
                             const wordMatch = text.match(new RegExp(`\\b(${wordPattern})\\s+${key}s?\\b`, 'i'));
                             if (wordMatch) {
@@ -199,11 +189,10 @@ function VoiceOrder({ onOrderComplete }) {
                             }
                           }
                           
-                          console.log('📊 Quantity:', quantity);
+                          console.log('Quantity:', quantity);
                           
                           if (hasRemoval) {
-                            // Remove specified quantity from order
-                            console.log('🗑️ REMOVING:', quantity, 'x', item.name);
+                            console.log('REMOVING:', quantity, 'x', item.name);
                             setCurrentOrder(prev => {
                               const existingIndex = prev.items.findIndex(i => i.name === item.name);
                               let newItems;
@@ -213,27 +202,23 @@ function VoiceOrder({ onOrderComplete }) {
                                 const newQty = currentQty - quantity;
                                 
                                 if (newQty <= 0) {
-                                  // Remove item completely if quantity becomes 0 or negative
                                   newItems = prev.items.filter((_, idx) => idx !== existingIndex);
                                 } else {
-                                  // Reduce quantity
                                   newItems = [...prev.items];
                                   newItems[existingIndex] = { ...newItems[existingIndex], quantity: newQty };
                                 }
                               } else {
-                                // Item not in order, nothing to remove
                                 newItems = prev.items;
                               }
                               
                               const total = newItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
                               const newOrder = { items: newItems, total };
-                              console.log('❌ Removed:', newOrder);
+                              console.log('Removed:', newOrder);
                               currentOrderRef.current = newOrder;
                               return newOrder;
                             });
                           } else {
-                            // Add or update item in order
-                            console.log('➕ ADDING:', item.name, 'x', quantity);
+                            console.log('ADDING:', item.name, 'x', quantity);
                             setCurrentOrder(prev => {
                               const existingIndex = prev.items.findIndex(i => i.name === item.name);
                               let newItems;
@@ -247,21 +232,18 @@ function VoiceOrder({ onOrderComplete }) {
                               
                               const total = newItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
                               const newOrder = { items: newItems, total };
-                              console.log('✅ Updated:', newOrder);
+                              console.log('Updated:', newOrder);
                               currentOrderRef.current = newOrder;
                               return newOrder;
                             });
                           }
-                          // Break after processing to avoid duplicate matches
-                          // (e.g., "korean fried chicken" matches both that key AND "fried chicken")
                           break;
                         }
                       }
                     } else {
-                      console.log('❌ PARSING DISABLED');
+                      console.log('PARSING DISABLED');
                     }
                     
-                    // Check for order completion phrase - be lenient with variations
                     const completionPhrases = [
                       'order is ready',
                       'order ready', 
@@ -296,7 +278,6 @@ function VoiceOrder({ onOrderComplete }) {
                       }
                     }
                     
-                    // Legacy ORDER_COMPLETE check
                     if (text.includes('ORDER_COMPLETE')) {
                       console.log('Order complete marker found!');
                       console.log('Full ORDER_COMPLETE text:', text);
@@ -320,13 +301,9 @@ function VoiceOrder({ onOrderComplete }) {
                       }
                     }
 
-                    // Remove ALL thinking/reasoning patterns
                     let cleanText = text
-                      // Remove bold headings with their following paragraph
                       .replace(/\*\*[^*]+\*\*[\s\S]*?(?=\n\n|\n[A-Z]|$)/g, '')
-                      // Remove markdown bold
                       .replace(/\*\*([^*]+)\*\*/g, '$1')
-                      // Remove code blocks and JSON
                       .replace(/ORDER_COMPLETE/gi, '')
                       .replace(/```json\s*/g, '')
                       .replace(/```/g, '')
@@ -334,15 +311,12 @@ function VoiceOrder({ onOrderComplete }) {
                       .split('\n')
                       .filter(line => {
                         const trimmed = line.trim();
-                        // Skip empty lines
                         if (!trimmed) return false;
                         
-                        // Filter out thinking patterns
                         if (trimmed.match(/^(I'm|I've|I'am|I am|I will|I'll|My |I need|Let me|I should|I realized|I have|The user|I processed|I received|I noted|I prioritiz|This response|This will|As directed|maintaining|I\'ve noted)/i)) {
                           return false;
                         }
                         
-                        // Filter out meta-commentary about the conversation
                         if (trimmed.match(/(serve as|culmination|process|brevity|clarity|conversational tone|definitive|finalize|prioritizing)/i)) {
                           return false;
                         }
@@ -362,7 +336,6 @@ function VoiceOrder({ onOrderComplete }) {
                     }
                   }
 
-                  // Handle audio responses
                   if (part.inlineData?.data) {
                     playAudio(part.inlineData.data);
                   }
@@ -415,27 +388,24 @@ function VoiceOrder({ onOrderComplete }) {
 
   const playAudio = async (base64Audio) => {
     try {
-      // Decode base64 to binary
       const binaryString = atob(base64Audio);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
 
-      // Create audio buffer
       const audioContext = outputAudioContextRef.current;
       const samples = bytes.length / 2;
       const audioBuffer = audioContext.createBuffer(1, samples, 24000);
       const channelData = audioBuffer.getChannelData(0);
 
-      // Convert bytes to signed 16-bit samples
       const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
       for (let i = 0; i < samples; i++) {
         const int16 = view.getInt16(i * 2, true);
-        channelData[i] = int16 / 32768; // normalize to [-1, 1]
+        channelData[i] = int16 / 32768;
       }
 
-      // Play audio
+
       nextStartTimeRef.current = Math.max(
         nextStartTimeRef.current,
         audioContext.currentTime
@@ -495,13 +465,12 @@ function VoiceOrder({ onOrderComplete }) {
         const inputBuffer = audioProcessingEvent.inputBuffer;
         const pcmData = inputBuffer.getChannelData(0);
         
-        // Calculate audio level for visualization
         let sum = 0;
         for (let i = 0; i < pcmData.length; i++) {
           sum += pcmData[i] * pcmData[i];
         }
         const rms = Math.sqrt(sum / pcmData.length);
-        setAudioLevel(Math.min(rms * 10, 1)); // Scale and cap at 1
+        setAudioLevel(Math.min(rms * 10, 1));
         
         const int16Data = new Int16Array(pcmData.length);
         for (let i = 0; i < pcmData.length; i++) {
@@ -524,7 +493,6 @@ function VoiceOrder({ onOrderComplete }) {
               }
             });
           } catch (error) {
-            // Silently ignore if WebSocket is closing/closed
             if (!error.message?.includes('CLOSING') && !error.message?.includes('CLOSED')) {
               console.error('Error sending audio:', error);
             }
@@ -538,7 +506,7 @@ function VoiceOrder({ onOrderComplete }) {
       sourceNodeRef.current.isRecordingRef = isRecordingRef;
 
       setIsListening(true);
-      setStatus('🔴 Recording... Speak now');
+      setStatus('Recording... Speak now');
     } catch (error) {
       console.error('Error starting recording:', error);
       setStatus(`Error: ${error.message}`);
@@ -569,22 +537,19 @@ function VoiceOrder({ onOrderComplete }) {
   };
 
   const resetSession = () => {
-    // Stop recording first to clean up microphone access
     if (isListening) {
       stopRecording();
     }
     
-    // Mark as disconnected immediately
     isConnectedRef.current = false;
     
-    // Clean up audio sources first
+
     audioSourcesRef.current.forEach((source) => {
       try { source.stop(); } catch (err) { /* already stopped */ }
     });
     audioSourcesRef.current.clear();
     nextStartTimeRef.current = 0;
     
-    // Close the session (this will trigger the onclose handler)
     if (sessionRef.current) {
       try {
         sessionRef.current.close();
@@ -596,16 +561,14 @@ function VoiceOrder({ onOrderComplete }) {
     
     setMessages([]);
     
-    // Reset order state when resetting session
     setCurrentOrder({ items: [], total: 0 });
     currentOrderRef.current = { items: [], total: 0 };
-    console.log('🔄 Session and order state reset');
+    console.log('Session and order state reset');
     setStatus('Session reset. Reconnecting...');
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-red-900 to-gray-900 flex flex-col">
-      {/* Header */}
       <div className="bg-black/30 backdrop-blur-md border-b border-red-800/30 p-4 sm:p-6">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div>
@@ -627,14 +590,11 @@ function VoiceOrder({ onOrderComplete }) {
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8">
         <div className="max-w-2xl w-full">
           
-          {/* Voice Visualization */}
           <div className="mb-6 sm:mb-8">
             <div className="relative bg-black/40 backdrop-blur-sm rounded-3xl p-8 sm:p-12 border border-red-800/30 shadow-2xl">
-              {/* Waveform Bars */}
               <div className="flex items-center justify-center gap-1 sm:gap-2 h-32 sm:h-40">
                 {[...Array(12)].map((_, i) => {
                   const delay = i * 0.1;
@@ -676,7 +636,6 @@ function VoiceOrder({ onOrderComplete }) {
             </div>
           </div>
 
-          {/* Current Order Display */}
           {currentOrder.items.length > 0 && (
             <div className="mb-6 bg-black/40 backdrop-blur-sm rounded-2xl p-4 sm:p-6 border border-red-800/30">
               <h3 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Current Order</h3>
@@ -701,7 +660,6 @@ function VoiceOrder({ onOrderComplete }) {
             </div>
           )}
 
-          {/* Controls */}
           <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
             {!isListening ? (
               <button
@@ -735,10 +693,9 @@ function VoiceOrder({ onOrderComplete }) {
                       return;
                     }
                     onOrderComplete(orderToComplete);
-                    // Reset order state after completion
                     setCurrentOrder({ items: [], total: 0 });
                     currentOrderRef.current = { items: [], total: 0 };
-                    console.log('✅ Order state reset after manual completion');
+                    console.log('Order state reset after manual completion');
                   }}
                   className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-4 sm:py-5 px-6 sm:px-8 rounded-xl sm:rounded-2xl shadow-lg transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 text-base sm:text-lg"
                   disabled={currentOrder.items.length === 0}
@@ -750,7 +707,6 @@ function VoiceOrder({ onOrderComplete }) {
             )}
           </div>
 
-          {/* Reset Button */}
           {!isListening && (
             <div className="mt-4 text-center">
               <button
@@ -765,7 +721,6 @@ function VoiceOrder({ onOrderComplete }) {
         </div>
       </div>
 
-      {/* Footer Hint */}
       <div className="bg-black/30 backdrop-blur-md border-t border-red-800/30 p-3 sm:p-4 text-center">
         <p className="text-xs sm:text-sm text-red-200">
           {isListening ? 'Listening... Speak your order naturally' : 'Tap "Start Ordering" and say what you want'}
